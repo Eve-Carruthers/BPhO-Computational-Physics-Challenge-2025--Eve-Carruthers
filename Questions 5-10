@@ -1,0 +1,139 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Button, RadioButtons
+from matplotlib.patches import Circle, FancyArrow
+
+class OpticsSimulator:
+    def __init__(self, image_path):
+        self.img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
+        self.img = cv2.resize(self.img, (100, 100))
+
+        self.focal_length = 100  # in pixels
+        self.object_pos = [150, 200]  # x, y position
+        self.lens_pos = 300
+
+        self.dragging_object = False
+        self.dragging_lens = False
+
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_xlim(0, 600)
+        self.ax.set_ylim(0, 400)
+        self.ax.set_aspect('equal')
+        self.ax.invert_yaxis()
+        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+
+        self.mode = 'lens'  # 'lens', 'concave_mirror', 'convex_mirror', 'anamorphic'
+
+        ax_mode = plt.axes([0.75, 0.05, 0.2, 0.2])
+        self.radio = RadioButtons(ax_mode, ['lens', 'concave_mirror', 'convex_mirror', 'anamorphic'])
+        self.radio.on_clicked(self.set_mode)
+
+        self.plot()
+
+    def set_mode(self, label):
+        self.mode = label
+        self.plot()
+
+    def thin_lens_image(self, d_o, f):
+        try:
+            d_i = 1 / (1 / f - 1 / d_o)
+            M = -d_i / d_o
+            return d_i, M
+        except ZeroDivisionError:
+            return None, None
+
+    def spherical_mirror_image(self, d_o, f):
+        try:
+            d_i = 1 / (1 / f - 1 / d_o)
+            M = -d_i / d_o
+            return d_i, M
+        except ZeroDivisionError:
+            return None, None
+
+    def anamorphic_mapping(self, img, Rf):
+        h, w = img.shape[:2]
+        out = np.ones_like(img) * 255  # white background
+        cx, cy = w // 2, h // 2
+
+        for i in range(h):
+            for j in range(w):
+                x = (j - cx) / (w // 2)
+                y = (i - cy) / (h // 2)
+                r = np.sqrt(x**2 + y**2)
+                if r <= 1:
+                    theta = np.arctan2(y, x)
+                    new_x = int(cx + Rf * theta / np.pi)
+                    new_y = int(cy + Rf * (1 - r))
+                    if 0 <= new_x < w and 0 <= new_y < h:
+                        out[new_y, new_x] = img[i, j]
+        return out
+
+    def on_press(self, event):
+        if event.inaxes != self.ax:
+            return
+        if abs(event.xdata - self.object_pos[0]) < 20:
+            self.dragging_object = True
+        elif abs(event.xdata - self.lens_pos) < 20:
+            self.dragging_lens = True
+
+    def on_motion(self, event):
+        if not event.inaxes:
+            return
+        if self.dragging_object:
+            self.object_pos[0] = event.xdata
+            self.plot()
+        elif self.dragging_lens:
+            self.lens_pos = event.xdata
+            self.plot()
+
+    def on_release(self, event):
+        self.dragging_object = False
+        self.dragging_lens = False
+
+    def plot(self):
+        self.ax.clear()
+        self.ax.set_xlim(0, 600)
+        self.ax.set_ylim(0, 400)
+        self.ax.invert_yaxis()
+
+        if self.mode == 'anamorphic':
+            mapped = self.anamorphic_mapping(self.img, 200)
+            self.ax.imshow(mapped, extent=[200, 300, 150, 250])
+        else:
+            # Draw lens/mirror line
+            self.ax.axvline(self.lens_pos, color='blue', linestyle='--')
+            self.ax.text(self.lens_pos + 5, 20, 'Lens/Mirror', rotation=90, color='blue')
+
+            # Draw object
+            self.ax.imshow(self.img, extent=[self.object_pos[0], self.object_pos[0]+50, self.object_pos[1], self.object_pos[1]+50])
+
+            # Calculate image
+            d_o = self.lens_pos - self.object_pos[0]
+            if self.mode == 'lens':
+                d_i, M = self.thin_lens_image(d_o, self.focal_length)
+            elif self.mode == 'concave_mirror':
+                d_i, M = self.spherical_mirror_image(d_o, self.focal_length)
+            elif self.mode == 'convex_mirror':
+                d_i, M = self.spherical_mirror_image(d_o, -self.focal_length)
+            else:
+                d_i, M = None, None
+
+            if d_i is not None:
+                img_x = self.lens_pos + d_i
+                img_y = self.object_pos[1]
+                try:
+                    scaled = cv2.resize(self.img, None, fx=abs(M), fy=abs(M))
+                    if d_i > 0 and self.mode != 'convex_mirror':
+                        scaled = np.flipud(scaled)
+                    self.ax.imshow(scaled, extent=[img_x, img_x+50*np.sign(M), img_y, img_y+50*np.sign(M)])
+                except:
+                    pass
+
+        self.fig.canvas.draw()
+
+sim = OpticsSimulator('object.jpg')
+plt.show()
