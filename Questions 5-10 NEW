@@ -1,0 +1,78 @@
+from PIL import Image, ImageOps
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Button, RadioButtons
+from matplotlib.patches import Circle, FancyArrow
+
+
+class OpticsSimulator:
+    def __init__(self, image_path):
+        self.img_pil = Image.open(image_path).convert('RGB').resize((100, 100))
+        self.img = np.array(self.img_pil)
+
+        self.focal_length = 100
+        self.object_pos = [150, 200]
+        self.lens_pos = 300
+
+        self.dragging_object = False
+        self.dragging_lens = False
+
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_xlim(0, 600)
+        self.ax.set_ylim(0, 400)
+        self.ax.set_aspect('equal')
+        self.ax.invert_yaxis()
+
+        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+
+        self.mode = 'lens'
+
+        ax_mode = plt.axes([0.75, 0.05, 0.2, 0.2])
+        self.radio = RadioButtons(ax_mode, ['lens', 'concave_mirror', 'convex_mirror', 'anamorphic'])
+        self.radio.on_clicked(self.set_mode)
+
+        ax_reset = plt.axes([0.8, 0.9, 0.1, 0.05])
+        self.reset_button = Button(ax_reset, 'Reset')
+        self.reset_button.on_clicked(self.reset)
+
+        self.plot()
+
+    def reset(self, event=None):
+        self.object_pos = [150, 200]
+        self.lens_pos = 300
+        self.plot()
+
+    def set_mode(self, label):
+        self.mode = label
+        self.plot()
+
+    def thin_lens_image(self, d_o, f):
+        if abs(d_o) < 1e-3:
+            return None, None
+        try:
+            d_i = 1 / (1 / f - 1 / d_o)
+            M = -d_i / d_o
+            return d_i, M
+        except ZeroDivisionError:
+            return None, None
+
+    def spherical_mirror_image(self, d_o, f):
+        return self.thin_lens_image(d_o, f)
+
+    def anamorphic_mapping(self, img, Rf):
+        h, w = img.shape[:2]
+        out = np.ones_like(img) * 255
+        cx, cy = w // 2, h // 2
+        for i in range(h):
+            for j in range(w):
+                x = (j - cx) / (w // 2)
+                y = (i - cy) / (h // 2)
+                r = np.sqrt(x ** 2 + y ** 2)
+                if r <= 1:
+                    theta = np.arctan2(y, x)
+                    new_x = int(cx + Rf * theta / np.pi)
+                    new_y = int(cy + Rf * (1 - r))
+                    if 0 <= new_x < w and 0 <= new_y < h:
+                        out[new_y, new_x]()
