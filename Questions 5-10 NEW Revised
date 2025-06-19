@@ -164,7 +164,7 @@ class OpticsSimulator:
         plt.draw()
 
 # Run the simulator
-OpticsSimulator('your_image_file.jpg')  # Replace with your image file path
+OpticsSimulator('your_image_file.jpg') 
 plt.show()
 
 #GUI Interface
