@@ -67,16 +67,6 @@ Maps an image from a **unit circle** to a **radial fan-shaped sector** such that
 
 ---
 
-## Project Structure
-
-```
-optics_simulator.py     # Main program
-sample_image.jpg        # Input image (replace with your own)
-README.md               # Documentation
-```
-
----
-
 ## Acknowledgements
 
 Developed with Matplotlib, Pillow and NumPy.&#x20;
