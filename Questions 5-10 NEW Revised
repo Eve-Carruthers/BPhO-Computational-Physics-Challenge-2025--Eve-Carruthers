@@ -1,1 +1,212 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Button, RadioButtons
+from PIL import Image
+from matplotlib.patches import FancyArrow
 
+class OpticsSimulator:
+    def __init__(self, image_path):
+        self.img_pil = Image.open(image_path).convert('RGB').resize((100, 100))
+        self.img = np.array(self.img_pil)
+
+        # Object & lens setup
+        self.focal_length = 100
+        self.object_pos = [150, 200]
+        self.lens_pos = 300
+
+        self.dragging_object = False
+        self.dragging_lens = False
+
+        # Plot setup
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_xlim(0, 600)
+        self.ax.set_ylim(0, 400)
+        self.ax.set_aspect('equal')
+        self.ax.invert_yaxis()
+
+        # Event listeners
+        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+
+        # GUI widgets
+        ax_mode = plt.axes([0.75, 0.05, 0.2, 0.2])
+        self.radio = RadioButtons(ax_mode, ['lens', 'concave_mirror', 'convex_mirror', 'anamorphic'])
+        self.radio.on_clicked(self.set_mode)
+
+        ax_reset = plt.axes([0.8, 0.9, 0.1, 0.05])
+        self.reset_button = Button(ax_reset, 'Reset')
+        self.reset_button.on_clicked(self.reset)
+
+        self.mode = 'lens'
+        self.plot()
+
+    def reset(self, event=None):
+        self.object_pos = [150, 200]
+        self.lens_pos = 300
+        self.plot()
+
+    def set_mode(self, label):
+        self.mode = label
+        self.plot()
+
+    def on_press(self, event):
+        if abs(event.xdata - self.object_pos[0]) < 20:
+            self.dragging_object = True
+        elif abs(event.xdata - self.lens_pos) < 10:
+            self.dragging_lens = True
+
+    def on_motion(self, event):
+        if not event.xdata or not event.ydata:
+            return
+        if self.dragging_object:
+            self.object_pos = [int(event.xdata), int(event.ydata)]
+        elif self.dragging_lens:
+            self.lens_pos = int(event.xdata)
+        self.plot()
+
+    def on_release(self, event):
+        self.dragging_object = False
+        self.dragging_lens = False
+
+    def thin_lens_image(self, d_o, f):
+        try:
+            d_i = 1 / (1 / f - 1 / d_o)
+            M = -d_i / d_o
+            return d_i, M
+        except ZeroDivisionError:
+            return None, None
+
+    def mirror_image(self, d_o, f):
+        try:
+            d_i = 1 / (1 / f + 1 / d_o)
+            M = -d_i / d_o
+            return d_i, M
+        except ZeroDivisionError:
+            return None, None
+
+    def anamorphic_mapping(self, img, Rf=50):
+        h, w = img.shape[:2]
+        output = np.ones_like(img) * 255
+        cx, cy = w // 2, h // 2
+
+        for i in range(h):
+            for j in range(w):
+                x = (j - cx) / (w // 2)
+                y = (i - cy) / (h // 2)
+                r = np.sqrt(x**2 + y**2)
+                if r <= 1:
+                    theta = np.arctan2(y, x)
+                    new_x = int(cx + Rf * theta)
+                    new_y = int(cy - Rf * (1 - r))
+                    if 0 <= new_x < w and 0 <= new_y < h:
+                        output[new_y, new_x] = img[i, j]
+        return output
+
+    def plot_object(self):
+        self.ax.imshow(self.img, extent=[self.object_pos[0] - 25, self.object_pos[0] + 25,
+                                         self.object_pos[1] + 25, self.object_pos[1] - 25])
+        self.ax.text(self.object_pos[0], self.object_pos[1] + 35, 'Object', color='red', ha='center')
+
+    def plot_image(self, image_x, image_y, M, label='Image'):
+        img_scaled = np.clip((self.img_pil.resize((int(100 * abs(M)), int(100 * abs(M))))), 0, 255)
+        img_arr = np.array(img_scaled)
+        h, w = img_arr.shape[:2]
+        self.ax.imshow(img_arr, extent=[image_x - w//2, image_x + w//2,
+                                        image_y + h//2, image_y - h//2])
+        self.ax.text(image_x, image_y + h//2 + 15, label, color='blue', ha='center')
+
+    def plot_ray_diagram(self, obj_x, obj_y, img_x, img_y):
+        # Ray 1: Parallel to axis → through focus
+        self.ax.plot([obj_x, self.lens_pos, img_x], [obj_y, obj_y, img_y], 'orange', linestyle='--')
+
+        # Ray 2: Through center (straight)
+        self.ax.plot([obj_x, img_x], [obj_y, img_y], 'green', linestyle=':')
+
+    def plot(self):
+        self.ax.clear()
+        self.ax.set_xlim(0, 600)
+        self.ax.set_ylim(0, 400)
+        self.ax.invert_yaxis()
+
+        self.plot_object()
+
+        # Draw lens or mirror
+        if self.mode == 'lens':
+            self.ax.axvline(self.lens_pos, color='black', linestyle='--')
+            d_o = self.lens_pos - self.object_pos[0]
+            d_i, M = self.thin_lens_image(d_o, self.focal_length)
+        elif self.mode == 'concave_mirror':
+            self.ax.axvline(self.lens_pos, color='blue', linestyle='--')
+            d_o = self.object_pos[0] - self.lens_pos
+            d_i, M = self.mirror_image(d_o, self.focal_length)
+        elif self.mode == 'convex_mirror':
+            self.ax.axvline(self.lens_pos, color='purple', linestyle='--')
+            d_o = self.object_pos[0] - self.lens_pos
+            d_i, M = self.mirror_image(d_o, -abs(self.focal_length))
+        elif self.mode == 'anamorphic':
+            warped = self.anamorphic_mapping(self.img)
+            self.ax.imshow(warped, extent=[200, 400, 300, 100])
+            self.ax.set_title("Anamorphic Projection")
+            plt.draw()
+            return
+
+        if d_i is not None:
+            if self.mode == 'lens':
+                img_x = self.lens_pos + d_i
+            else:
+                img_x = self.lens_pos - d_i
+            img_y = self.object_pos[1] * M
+            self.plot_image(img_x, img_y, M)
+            self.plot_ray_diagram(self.object_pos[0], self.object_pos[1], img_x, img_y)
+
+        self.ax.set_title(f"Mode: {self.mode}")
+        plt.draw()
+
+# Run the simulator
+OpticsSimulator('your_image_file.jpg')  # Replace with your image file path
+plt.show()
+
+#GUI Interface
+
+import tkinter as tk
+from tkinter import filedialog
+from PIL import ImageTk, Image
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from optics_simulator import OpticsSimulator
+
+class OpticsGUI:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Optics Simulator GUI")
+        self.master.geometry("400x300")
+
+        self.label = tk.Label(master, text="Select an image to begin simulation")
+        self.label.pack(pady=10)
+
+        self.upload_btn = tk.Button(master, text="Upload Image", command=self.upload_image)
+        self.upload_btn.pack(pady=5)
+
+        self.quit_btn = tk.Button(master, text="Quit", command=master.quit)
+        self.quit_btn.pack(pady=20)
+
+        self.image_path = None
+
+    def upload_image(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg *.png *.jpeg")])
+        if file_path:
+            self.image_path = file_path
+            self.label.config(text=f"Loaded: {file_path.split('/')[-1]}")
+            self.launch_simulator()
+
+    def launch_simulator(self):
+        self.master.withdraw()  # hide GUI window
+        OpticsSimulator(self.image_path)
+        plt.show()
+        self.master.deiconify()  # show GUI window again when plot closes
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = OpticsGUI(root)
+    root.mainloop()
