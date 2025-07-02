@@ -1,3 +1,7 @@
+#Reainbow physics Revision 1 - primary and secondary rainbow angles
+#Angular deviations in radians 
+#imtegrate 1b 
+
 import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
